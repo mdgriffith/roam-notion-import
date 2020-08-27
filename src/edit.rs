@@ -43,7 +43,6 @@ pub fn edit<Replacement>( parser: &mut Parser
 
 
     for found in results {
-        println!("new q");
         match replacement(&found) {
             None => {}
             Some((node, new)) => {
@@ -51,12 +50,13 @@ pub fn edit<Replacement>( parser: &mut Parser
                 let new_length = new.len();
                 let new_lines = new.lines().count() as isize;
 
+                let start_byte = (node.start_byte() as isize + byte_offset) as usize;
                 let old_end_byte = (node.end_byte() as isize + byte_offset) as usize;
                 let new_end_byte = (node.start_byte() as isize + byte_offset) as usize + new_length;
 
                 let edit = InputEdit {
                     // We start, accounting for offsets of previous edits
-                    start_byte: (node.start_byte() as isize + byte_offset) as usize,
+                    start_byte: start_byte,
                     old_end_byte: old_end_byte,
                     
                     new_end_byte: new_end_byte,
@@ -68,13 +68,24 @@ pub fn edit<Replacement>( parser: &mut Parser
                     ), 
                 };
 
-                row_offset = row_offset + new_lines;
+               
+
+                row_offset = row_offset + new_lines - 1;
                 column_offset =  node.start_position().column as isize;
                 last_row_edited = node.start_position().row;
-                byte_offset = new_end_byte as isize - old_end_byte as isize;
+                byte_offset = byte_offset + new_end_byte as isize - old_end_byte as isize;
 
-                println!("{:?}", new);
-                source.replace_range(node.byte_range(), &new);
+                // println!("Delta {:?}", new_end_byte as isize - old_end_byte as isize);
+                // println!("Full D {:?}", byte_offset);
+                // println!("D row {:?}", new_lines - 1);
+
+                // println!("{:#?}", new);
+                let range = std::ops::Range 
+                            { start: start_byte
+                            , end: old_end_byte 
+                            };
+
+                source.replace_range(range, &new);
 
             }
         }   

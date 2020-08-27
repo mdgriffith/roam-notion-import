@@ -17,6 +17,7 @@ mod edit;
 struct Page {
     notion_path: PathBuf,
     notion_link: String,
+    base: String,
     title:String,
     shorthand:String,
     tags: String,
@@ -51,6 +52,7 @@ fn main() -> io::Result<()> {
 
     let ids = Regex::new(r"\s[a-z0-9]{32}").unwrap();
     let path = Path::new("./data/NotionExport/Export-238ccc39-c4cb-4b7a-b559-7ff9d6481302/");
+    let path_str = path.to_str().unwrap();
 
     for entry_result in WalkDir::new(path) {
         match entry_result {
@@ -60,7 +62,7 @@ fn main() -> io::Result<()> {
                     let str_path = entry.path()
                                             .to_str()
                                             .unwrap()
-                                            .trim_start_matches(path.to_str().unwrap());
+                                            .trim_start_matches(path_str);
 
                     let title = ids.replace_all(str_path, "")
                                            .into_owned();
@@ -85,8 +87,23 @@ fn main() -> io::Result<()> {
                         .to_string();
 
 
+                    let mut base = entry.path()
+                        .parent()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .trim_start_matches(path_str)
+                        .replace(" ", "%20")
+                        .to_string();
+
+                    if (base == "./data/NotionExport/Export-238ccc39-c4cb-4b7a-b559-7ff9d6481302"){
+                        base = "".to_string();
+                    }
+
+
                     pages.push(Page { notion_path: entry.path().to_path_buf()
                                     , notion_link: str_path.to_string().replace(" ", "%20") // entry.path().to_str().unwrap().to_string()
+                                    , base: base
                                     , title: [category.clone(), shorthand.clone()].join(", ")
                                     , shorthand: shorthand.clone()
                                     , tags: category  
@@ -130,7 +147,7 @@ fn main() -> io::Result<()> {
                 break;
             }
         }
-        println!("{:#?}", page);
+        // println!("{:#?}", page);
     }
 
     let mut names: HashMap<String, String> = HashMap::new();
@@ -144,7 +161,7 @@ fn main() -> io::Result<()> {
 
 
     for page in &mut pages {
-
+        if !page.markdown {continue}
         // Read the markdown file
         let file = File::open(Path::new(&page.notion_path))?;
         let mut buf_reader = BufReader::new(file);
@@ -168,11 +185,33 @@ fn main() -> io::Result<()> {
             let target = found.captures[2].node.utf8_text(read.as_bytes()).ok();
                
             // println!("Captured -> {:?}", found.captures[1].node.to_sexp());
-            // println!("         -> {:?}", text);
+            
+
             // println!(" rename to: {:?} ", names.get(target));
 
             match target.and_then(|x| names.get(x)) {
-                None => None,
+                None => { 
+                    // If nothing was found, it might be a relative link
+                    // so we can search again using 
+                    // page.base + target_text
+                    match target {
+                        Some(target_text) => {
+                            let relative = Path::new(&page.base).join(target_text);
+
+                            match names.get(relative.to_str().unwrap()) {
+                                Some(new_name) => {
+                                    Some((&found.captures[0].node, ["[[", new_name , "]]"].join("")))
+                                }
+                                None => {
+                                    None
+                                }
+                            }
+                        }
+                        None => {
+                            None
+                        }
+                    }   
+                },
                 Some(new_name) => {
                     Some((&found.captures[0].node, ["[[", new_name , "]]"].join("")))
                 }
@@ -180,14 +219,13 @@ fn main() -> io::Result<()> {
             }
         });
 
-
         // output new file to new directory
-        println!("{:?}", source);
-
-        break;
+        let output_dir = Path::new("./data/ForRoam");
+        let mut file = File::create(output_dir.join([page.final_name.to_string(), ".md".to_string()].join("")))?;
+        file.write_all(source.as_bytes())?;
     }
 
-    print!("fin");
+    println!("fin");
 
    
     Ok(())
